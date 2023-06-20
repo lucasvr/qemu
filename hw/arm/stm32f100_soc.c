@@ -26,6 +26,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
+#include "qemu/log.h"
 #include "hw/arm/boot.h"
 #include "exec/address-spaces.h"
 #include "hw/arm/stm32f100_soc.h"
@@ -40,9 +41,85 @@ static const uint32_t usart_addr[STM_NUM_USARTS] = { 0x40013800, 0x40004400,
     0x40004800 };
 static const uint32_t spi_addr[STM_NUM_SPIS] = { 0x40013000, 0x40003800,
     0x40003C00 };
+static const uint32_t fsmc_addr = 0xA0000000;
 
 static const int usart_irq[STM_NUM_USARTS] = {37, 38, 39};
 static const int spi_irq[STM_NUM_SPIS] = {35, 36, 51};
+static const int fsmc_irq = 48;
+
+static uint64_t stm32f100_rcc_read(void *h, hwaddr offset, unsigned size)
+{
+    STM32F100State *s = (STM32F100State *) h;
+    switch (offset) {
+    case 0x00:
+        return s->rcc.cr;
+    case 0x04:
+        return s->rcc.cfgr;
+    case 0x08:
+        return s->rcc.cir;
+    case 0x0C:
+        return s->rcc.apb2rstr;
+    case 0x10:
+        return s->rcc.apb1rstr;
+    case 0x14:
+        return s->rcc.ahbenr;
+    case 0x18:
+        return s->rcc.apb2enr;
+    case 0x1C:
+        return s->rcc.apb1enr;
+    case 0x20:
+        return s->rcc.bdcr;
+    case 0x24:
+        return s->rcc.csr;
+    case 0x2C:
+        return s->rcc.cfgr2;
+    default:
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
+    }
+    return 0;
+}
+
+static void stm32f100_rcc_write(void *h, hwaddr offset, uint64_t value64,
+                                unsigned size)
+{
+    STM32F100State *s = (STM32F100State *) h;
+    uint32_t value = value64 & 0xffffffff;
+
+    switch (offset) {
+    case 0x00:
+        s->rcc.cr = value;
+    case 0x04:
+        s->rcc.cfgr = value;
+    case 0x08:
+        s->rcc.cir = value;
+    case 0x0C:
+        s->rcc.apb2rstr = value;
+    case 0x10:
+        s->rcc.apb1rstr = value;
+    case 0x14:
+        s->rcc.ahbenr = value;
+    case 0x18:
+        s->rcc.apb2enr = value;
+    case 0x1C:
+        s->rcc.apb1enr = value;
+    case 0x20:
+        s->rcc.bdcr = value;
+    case 0x24:
+        s->rcc.csr = value;
+    case 0x2C:
+        s->rcc.cfgr2 = value;
+    default:
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: Bad offset 0x%"HWADDR_PRIx"\n", __func__, offset);
+    }
+}
+
+static const MemoryRegionOps stm32f100_rcc_ops = {
+    .read = stm32f100_rcc_read,
+    .write = stm32f100_rcc_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
 
 static void stm32f100_soc_initfn(Object *obj)
 {
@@ -66,6 +143,11 @@ static void stm32f100_soc_initfn(Object *obj)
 
     /* Default density. May be overridden by the machine or cmdline option */
     s->density = STM32F100_DENSITY_HIGH;
+
+    memset(&s->rcc, 0, sizeof(s->rcc));
+    s->rcc.cr = 0x00000083;
+    s->rcc.ahbenr = 0x00000014;
+    s->rcc.csr = 0x0C000000;
 }
 
 static void stm32f100_soc_realize(DeviceState *dev_soc, Error **errp)
@@ -168,6 +250,25 @@ static void stm32f100_soc_realize(DeviceState *dev_soc, Error **errp)
         sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, spi_irq[i]));
     }
 
+    /* Declare a simple memory-mapped I/O region for RCC */
+    memory_region_init_io(&s->iomem, OBJECT(dev_soc), &stm32f100_rcc_ops, s,
+                          "STM32F100.mmio.rcc", 0x400);
+    memory_region_add_subregion(system_memory, 0x40021000, &s->iomem);
+
+    /* Declare an I/O region for FSMC */
+    if (s->density == STM32F100_DENSITY_HIGH) {
+        object_initialize_child(OBJECT(dev_soc), "fsmc", &s->fsmc,
+                                TYPE_STM32F1XX_FSMC);
+
+        dev = DEVICE(&s->fsmc);
+        if (!sysbus_realize(SYS_BUS_DEVICE(&s->fsmc), errp)) {
+            return;
+        }
+        busdev = SYS_BUS_DEVICE(dev);
+        sysbus_mmio_map(busdev, 0, fsmc_addr);
+        sysbus_connect_irq(busdev, 0, qdev_get_gpio_in(armv7m, fsmc_irq));
+    }
+
     create_unimplemented_device("timer[2]",  0x40000000, 0x400);
     create_unimplemented_device("timer[3]",  0x40000400, 0x400);
     create_unimplemented_device("timer[4]",  0x40000800, 0x400);
@@ -203,7 +304,6 @@ static void stm32f100_soc_realize(DeviceState *dev_soc, Error **errp)
     create_unimplemented_device("timer[17]", 0x40014800, 0x400);
     create_unimplemented_device("DMA1",      0x40020000, 0x400);
     create_unimplemented_device("DMA2",      0x40020400, 0x400);
-    create_unimplemented_device("RCC",       0x40021000, 0x400);
     create_unimplemented_device("Flash Int", 0x40022000, 0x400);
     create_unimplemented_device("CRC",       0x40023000, 0x400);
 }

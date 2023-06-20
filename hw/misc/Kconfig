@@ -73,6 +73,9 @@ config IMX
     select SSI
     select USB_EHCI_SYSBUS
 
+config STM32F1XX_FSMC
+    bool
+
 config STM32F2XX_SYSCFG
     bool
 

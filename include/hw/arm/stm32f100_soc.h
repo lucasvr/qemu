@@ -26,6 +26,7 @@
 #define HW_ARM_STM32F100_SOC_H
 
 #include "hw/char/stm32f2xx_usart.h"
+#include "hw/misc/stm32f1xx_fsmc.h"
 #include "hw/ssi/stm32f2xx_spi.h"
 #include "hw/arm/armv7m.h"
 #include "qom/object.h"
@@ -42,8 +43,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(STM32F100State, STM32F100_SOC)
 #define FLASH_SIZE_LD (32 * 1024)
 #define FLASH_SIZE_MD (128 * 1024)
 #define FLASH_SIZE_HD (512 * 1024)
+
 #define SRAM_BASE_ADDRESS 0x20000000
-#define SRAM_SIZE (8 * 1024)
+#define SRAM_SIZE (32 * 1024)
+
+#define PSRAM1_BASE_ADDRESS 0x60000000
+#define PSRAM1_SIZE (256 * 1024 * 1024)
 
 /* Supported density value lines */
 typedef enum {
@@ -51,6 +56,20 @@ typedef enum {
     STM32F100_DENSITY_MEDIUM,
     STM32F100_DENSITY_HIGH,
 } STM32F100Density;
+
+typedef struct {
+    uint32_t cr;
+    uint32_t cfgr;
+    uint32_t cir;
+    uint32_t apb2rstr;
+    uint32_t apb1rstr;
+    uint32_t ahbenr;
+    uint32_t apb2enr;
+    uint32_t apb1enr;
+    uint32_t bdcr;
+    uint32_t csr;
+    uint32_t cfgr2;
+} STM32F1XXRccState;
 
 struct STM32F100State {
     /*< private >*/
@@ -63,10 +82,13 @@ struct STM32F100State {
 
     STM32F2XXUsartState usart[STM_NUM_USARTS];
     STM32F2XXSPIState spi[STM_NUM_SPIS];
+    STM32F1XXFsmcState fsmc;
+    STM32F1XXRccState rcc;
 
     MemoryRegion sram;
     MemoryRegion flash;
     MemoryRegion flash_alias;
+    MemoryRegion iomem;
 
     Clock *sysclk;
     Clock *refclk;

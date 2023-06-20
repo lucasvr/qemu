@@ -30,6 +30,7 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-clock.h"
 #include "qemu/error-report.h"
+#include "exec/address-spaces.h"
 #include "hw/arm/stm32f100_soc.h"
 #include "hw/arm/boot.h"
 
@@ -38,6 +39,7 @@
 
 static void stm32f1_generic_init(MachineState *machine)
 {
+    MemoryRegion *psram1;
     STM32F100State *s;
     DeviceState *dev;
     Clock *sysclk;
@@ -59,6 +61,16 @@ static void stm32f1_generic_init(MachineState *machine)
     armv7m_load_kernel(ARM_CPU(first_cpu),
                        machine->kernel_filename,
                        0, s->flash_size);
+
+    /* Allow assigning more RAM via FSMC on high-density devices */
+    if (s->density == STM32F100_DENSITY_HIGH) {
+        assert(machine->ram_size <= PSRAM1_SIZE);
+        psram1 = g_new(MemoryRegion, 1);
+        memory_region_init_ram(psram1, NULL, "STM32F1-generic.psram1",
+                               machine->ram_size, &error_fatal);
+        memory_region_add_subregion(get_system_memory(),
+                                    PSRAM1_BASE_ADDRESS, psram1);
+    }
 }
 
 static void stm32f1_generic_machine_init(MachineClass *mc)

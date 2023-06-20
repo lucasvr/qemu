@@ -40,6 +40,8 @@ Supported devices
  * SPI controller
  * System configuration (SYSCFG)
  * Timer controller (TIMER)
+ * Reset and Clock Controller (RCC)
+ * Flexible static memory controller (FSMC)
 
 Missing devices
 ---------------
@@ -57,7 +59,6 @@ Missing devices
  * Power supply configuration (PWR)
  * Random Number Generator (RNG)
  * Real-Time Clock (RTC) controller
- * Reset and Clock Controller (RCC)
  * Secure Digital Input/Output (SDIO) interface
  * USB OTG
  * Watchdog controller (IWDG, WWDG)
@@ -79,3 +80,10 @@ to select the device density line.  The following values are supported:
 .. code-block:: bash
 
   $ qemu-system-arm -M stm32f1-generic -global stm32f100-soc.density=medium ...
+
+High-density devices can also enable up to 256 MB of external memory using
+the `-m SIZE` option. The memory is mapped at address 0x60000000. Example:
+ 
+.. code-block:: bash
+
+  $ qemu-system-arm -M stm32f1-generic -m 64M ...
